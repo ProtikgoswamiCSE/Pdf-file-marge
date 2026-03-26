@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Merge System</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; line-height: 1.6; background-color: #f4f4f9; }
+        h1 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
+        form { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .field { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], select, input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        .error { color: #dc3545; background: #f8d7da; padding: 10px; border-radius: 4px; margin-bottom: 20px; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 15px; color: #007bff; text-decoration: none; }
+        nav a:hover { text-decoration: underline; }
+
+        #file-list { margin-top: 15px; }
+        .file-item { 
+            background: #fff; border: 1px solid #ccc; margin-bottom: 15px; padding: 15px; 
+            border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .file-header { display: flex; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .drag-handle { margin-right: 15px; color: #888; cursor: grab; font-size: 20px; }
+        .file-info { flex-grow: 1; font-weight: bold; font-size: 1.1em; }
+        
+        .pages-container { 
+            display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; 
+            background: #f9f9f9; border-radius: 4px; max-height: 300px; overflow-y: auto;
+        }
+        .page-thumb { 
+            width: 100px; border: 2px solid #ddd; border-radius: 4px; cursor: pointer; 
+            position: relative; transition: transform 0.2s; background: white;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .page-thumb:hover { transform: scale(1.05); }
+        .page-thumb.selected { border-color: #007bff; background: #e7f1ff; }
+        .page-thumb canvas, .page-thumb img { width: 100%; height: auto; border-radius: 2px; }
+        .docx-preview { padding: 15px; background: white; border: 1px solid #eee; max-height: 200px; overflow-y: auto; font-size: 0.8em; }
+        
+        .page-number { font-size: 0.8em; margin-top: 2px; font-weight: bold; }
+        .selection-badge {
+            position: absolute; top: 5px; right: 5px; background: #007bff; color: white;
+            width: 20px; height: 20px; border-radius: 50%; display: none;
+            align-items: center; justify-content: center; font-size: 12px;
+        }
+        .page-thumb.selected .selection-badge { display: flex; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Home (Merge)</a>
+        <a href="/history">Merge History</a>
+    </nav>
+
+    <h1>Merge Files</h1>
+
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if not pillow_available %}
+        <div class="warning" style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; margin-bottom: 20px; display: none;" id="image-warning">
+            <strong>Warning:</strong> Image merging is currently unavailable on this server. Only PDFs will be processed.
+        </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="merge-form">
+        {% csrf_token %}
+        <div class="field">
+            <label for="job_name">Pdf Name (optional):</label>
+            <input type="text" name="job_name" id="job_name" placeholder="e.g. My Merged Document">
+        </div>
+
+        <div class="field">
+            <label for="merge_type">File Type:</label>
+            <select name="merge_type" id="merge_type" required>
+                <option value="PDF">PDF (Includes Images/DOCX)</option>
+                <option value="CSV">CSV</option>
+                <option value="EXCEL">Excel (.xlsx)</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="files">Select Files:</label>
+            <input type="file" name="files" id="files" multiple required accept=".pdf,.png,.jpg,.jpeg,.docx,.csv,.xlsx">
+            <small>Support: PDF, Images (PNG/JPG), DOCX, CSV, Excel. Drag to reorder.</small>
+        </div>
+
+        <div id="file-list-container" style="display:none;">
+            <label>Selected Files & Previews:</label>
+            <div id="file-list"></div>
+        </div>
+
+        <input type="hidden" name="file_order" id="file_order">
+        <input type="hidden" name="page_ranges" id="page_ranges">
+
+        <button type="submit" style="margin-top: 20px; width: 100%; font-weight: bold; padding: 15px;">Merge and Save</button>
+    </form>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const fileInput = document.getElementById('files');
+        const fileList = document.getElementById('file-list');
+        const fileListContainer = document.getElementById('file-list-container');
+        const mergeForm = document.getElementById('merge-form');
+        const fileOrderInput = document.getElementById('file_order');
+        const pageRangesInput = document.getElementById('page_ranges');
+        const mergeTypeSelect = document.getElementById('merge_type');
+
+        fileInput.addEventListener('change', async function(e) {
+            const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                fileListContainer.style.display = 'block';
+                fileList.innerHTML = '';
+                
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const item = document.createElement('div');
+                    item.className = 'file-item';
+                    item.dataset.index = i;
+                    
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    const isPdf = ext === 'pdf';
+                    const isImage = ['png', 'jpg', 'jpeg'].includes(ext);
+                    const isDocx = ext === 'docx';
+                    
+                    if (isImage) {
+                        const warning = document.getElementById('image-warning');
+                        if (warning) warning.style.display = 'block';
+                    }
+                    
+                    item.innerHTML = `
+                        <div class="file-header">
+                            <span class="drag-handle">☰</span>
+                            <div class="file-info">${file.name}</div>
+                        </div>
+                        <div class="pages-preview" id="preview-${i}">
+                            <div class="pages-container">Loading preview...</div>
+                        </div>
+                        <input type="hidden" class="page-selection-input" value="all">
+                    `;
+                    fileList.appendChild(item);
+
+                    if (isPdf) {
+                        renderPdfThumbnails(file, i);
+                    } else if (isImage) {
+                        renderImageThumbnail(file, i);
+                    } else if (isDocx) {
+                        renderDocxPreview(file, i);
+                    } else {
+                        document.querySelector(`#preview-${i} .pages-container`).innerHTML = '<p>No preview for this type.</p>';
+                    }
+                }
+
+                new Sortable(fileList, {
+                    animation: 150,
+                    handle: '.drag-handle',
+                    ghostClass: 'sortable-ghost'
+                });
+            } else {
+                fileListContainer.style.display = 'none';
+            }
+        });
+
+        async function renderPdfThumbnails(file, fileIndex) {
+            const container = document.querySelector(`#preview-${fileIndex} .pages-container`);
+            const reader = new FileReader();
+            reader.onload = async function() {
+                const pdf = await pdfjsLib.getDocument(new Uint8Array(this.result)).promise;
+                container.innerHTML = '';
+                const selectedPages = new Set();
+                for(let p=1; p<=pdf.numPages; p++) selectedPages.add(p);
+
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    const viewport = page.getViewport({ scale: 0.2 });
+                    const canvas = document.createElement('canvas');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+
+                    const thumb = createThumb(canvas, pageNum, true);
+                    container.appendChild(thumb);
+                    thumb.onclick = () => togglePage(thumb, pageNum, selectedPages, fileIndex, pdf.numPages);
+                }
+                updateHiddenInput(fileIndex, selectedPages, pdf.numPages);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderImageThumbnail(file, fileIndex) {
+            const container = document.querySelector(`#preview-${fileIndex} .pages-container`);
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                container.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                const thumb = createThumb(img, 1, true);
+                container.appendChild(thumb);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function renderDocxPreview(file, fileIndex) {
+            const container = document.querySelector(`#preview-${fileIndex} .pages-container`);
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                mammoth.convertToHtml({arrayBuffer: e.target.result})
+                    .then(result => {
+                        container.innerHTML = `<div class="docx-preview">${result.value}</div>`;
+                    })
+                    .catch(err => { container.innerHTML = 'Error loading DOCX'; });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function createThumb(el, num, selected) {
+            const thumb = document.createElement('div');
+            thumb.className = `page-thumb ${selected ? 'selected' : ''}`;
+            thumb.innerHTML = `<div class="selection-badge">✓</div><div class="page-number">${num}</div>`;
+            thumb.prepend(el);
+            return thumb;
+        }
+
+        function togglePage(thumb, pageNum, selectedPages, fileIndex, total) {
+            if (selectedPages.has(pageNum)) {
+                selectedPages.delete(pageNum);
+                thumb.classList.remove('selected');
+            } else {
+                selectedPages.add(pageNum);
+                thumb.classList.add('selected');
+            }
+            updateHiddenInput(fileIndex, selectedPages, total);
+        }
+
+        function updateHiddenInput(fileIndex, selectedPages, totalPages) {
+            const input = document.querySelector(`.file-item[data-index="${fileIndex}"] .page-selection-input`);
+            input.value = selectedPages.size === totalPages ? 'all' : (selectedPages.size === 0 ? 'none' : Array.from(selectedPages).sort((a,b)=>a-b).join(','));
+        }
+
+        mergeForm.addEventListener('submit', function() {
+            const items = Array.from(fileList.querySelectorAll('.file-item'));
+            fileOrderInput.value = items.map(item => item.dataset.index).join(',');
+            pageRangesInput.value = JSON.stringify(items.map(item => item.querySelector('.page-selection-input').value === 'none' ? '' : item.querySelector('.page-selection-input').value));
+        });
+    </script>
+</body>
+</html>

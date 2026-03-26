@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Merge History</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; background-color: #f4f4f9; }
+        h1 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th, td { text-align: left; padding: 12px 15px; border-bottom: 1px solid #eee; }
+        th { background-color: #007bff; color: white; }
+        tr:hover { background-color: #f1f1f1; }
+        .download-btn { background-color: #28a745; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .download-btn:hover { background-color: #218838; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 15px; color: #007bff; text-decoration: none; }
+        nav a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Home (Merge)</a>
+        <a href="/history">Merge History</a>
+    </nav>
+
+    <h1>Merge History</h1>
+
+    {% if jobs %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Pdf Name</th>
+                    <th>Type</th>
+                    <th>Created At</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                    <tr>
+                        <td>{{ job.name }}</td>
+                        <td>{{ job.merge_type }}</td>
+                        <td>{{ job.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            {% if job.status == 'COMPLETED' %}
+                                <span style="color: green; font-weight: bold;">Completed</span>
+                            {% elif job.status == 'FAILED' %}
+                                <span style="color: red; font-weight: bold;">Failed</span>
+                            {% else %}
+                                <span style="color: grey;">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if job.status == 'COMPLETED' and job.merged_file %}
+                                <a href="{{ job.merged_file.url }}" class="download-btn">Download</a>
+                            {% elif job.status == 'FAILED' %}
+                                <span style="color: red;">Error</span>
+                            {% else %}
+                                <span style="color: #666;">Processing...</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No merge jobs found yet. Go to <a href="/">Home</a> to start merging.</p>
+    {% endif %}
+</body>
+</html>
