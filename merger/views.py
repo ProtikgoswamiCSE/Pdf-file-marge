@@ -8,7 +8,7 @@ import io
 import openpyxl
 from django.conf import settings
 import os
-from .utils import docx_to_text, text_to_pdf_buffer, image_to_pdf_buffer
+from .utils import docx_to_text, text_to_pdf_buffer
 
 def index(request):
     if request.method == 'POST':
@@ -74,7 +74,7 @@ def index(request):
             job.save()
             return render(request, 'merger/index.html', {'error': f'Merge failed: {str(e)}'})
 
-    return render(request, 'merger/index.html', {'pillow_available': True})
+    return render(request, 'merger/index.html')
 
 def history(request):
     jobs = MergeJob.objects.all().order_by('-created_at')
@@ -108,16 +108,7 @@ def merge_pdfs(uploaded_files, page_ranges):
             ext = file_path.split('.')[-1].lower()
             range_str = page_ranges[i] if i < len(page_ranges) else 'all'
 
-            if ext in ['png', 'jpg', 'jpeg']:
-                try:
-                    img_pdf_buf = image_to_pdf_buffer(file_path)
-                    merger.append(img_pdf_buf)
-                except Exception as img_err:
-                    print(f"Error merging image {file_path}: {img_err}")
-                    # Continue anyway if one image fails?
-                    continue
-                    
-            elif ext == 'pdf':
+            if ext == 'pdf':
                 with open(file_path, 'rb') as f:
                     reader = PdfReader(f)
                     max_pages = len(reader.pages)

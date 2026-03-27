@@ -45,18 +45,3 @@ def text_to_pdf_buffer(text):
     
     buf.seek(0)
     return buf
-
-def image_to_pdf_buffer(image_path):
-    """Converts an image to a PDF in a BytesIO buffer using fpdf2."""
-    pdf = FPDF()
-    pdf.add_page()
-    # fpdf2.image() can take a file path
-    # We'll try to use it directly. Note: without Pillow, 
-    # fpdf2 might only support JPEG/PNG if it can parse them natively.
-    pdf.image(image_path, x=10, y=10, w=190)
-    
-    buf = io.BytesIO()
-    pdf_bytes = pdf.output()
-    buf.write(pdf_bytes)
-    buf.seek(0)
-    return buf
