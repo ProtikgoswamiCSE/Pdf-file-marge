@@ -1,0 +1,12 @@
+asgiref==3.11.1
+defusedxml==0.7.1
+Django==6.0.3
+et_xmlfile==2.0.0
+fonttools==4.62.1
+fpdf2==2.8.7
+openpyxl==3.1.5
+PyPDF2==3.0.1
+sqlparse==0.5.5
+tzdata==2025.3
+gunicorn==23.0.0
+whitenoise==6.9.0
